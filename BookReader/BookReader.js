@@ -37,7 +37,7 @@ function BookReader(options) {
     this.setup(options);
 }
 
-BookReader.version = "3.2.0";
+BookReader.version = "3.0.8";
 
 // Mode constants
 BookReader.constMode1up = 1;
@@ -52,9 +52,6 @@ BookReader.eventNames = {
 };
 
 BookReader.defaultOptions = {
-    // A string, such as "mode/1up"
-    defaults: null,
-
     // Padding in 1up
     padding: 10,
     // UI mode
@@ -77,7 +74,7 @@ BookReader.defaultOptions = {
     showToolbar: true,
     showLogo: true,
     // Where the logo links to
-    logoURL: 'https://archive.org',
+    logoURL: '#',
 
     // Base URL for UI images - should be overriden (before init) by
     // custom implementations.
@@ -92,9 +89,9 @@ BookReader.defaultOptions = {
         {reduce: 0.5, autofit: null},
         {reduce: 1, autofit: null},
         {reduce: 2, autofit: null},
-        {reduce: 3, autofit: null},
         {reduce: 4, autofit: null},
-        {reduce: 6, autofit: null}
+        {reduce: 8, autofit: null},
+        {reduce: 16, autofit: null}
     ],
 
     // Object to hold parameters related to 1up mode
@@ -197,10 +194,8 @@ BookReader.prototype.setup = function(options) {
 
     // Private properties below. Configuration should be done with options.
     this.reduce = 4;
-    this.defaults = options.defaults;
     this.padding = options.padding;
     this.mode = this.constMode1up;
-    this.prevReadMode = null;
     this.ui = options.ui;
     this.uiAutoHide = options.uiAutoHide;
 
@@ -261,6 +256,8 @@ BookReader.prototype.setup = function(options) {
     this.getSpreadIndices = options.getSpreadIndices || BookReader.prototype.getSpreadIndices;
     this.leafNumToIndex = options.leafNumToIndex || BookReader.prototype.leafNumToIndex;
     this.refs = {};
+    this.copyrights = 'Copyrights';
+    this.AboutTheBook ='About this book';
 };
 
 // Library functions
@@ -368,65 +365,47 @@ BookReader.util = {
 };
 
 
-/**
- * Parses params from from various initialization contexts (url, cookie, options)
- * @private
- * @return {object} the parased params
- */
-BookReader.prototype.initParams = function() {
-    var params = {};
-
-    // this.defaults is a string passed in the url format. eg "page/1/mode/1up"
-    if (this.defaults) {
-        $.extend(true, params, this.paramsFromFragment(this.defaults));
-    }
-
-    // Check for Resume plugin
-    if (this.enablePageResume && this.getNumLeafs() > 2) {
-        // Check cookies
-        var val = this.getResumeValue();
-        if (val !== null) {
-            params.index = val;
-        }
-    }
-
-    if (this.enableUrlPlugin && window.location.hash) {
-        // params explicitly set in URL take precedence over all other methods
-        var urlParams = this.paramsFromFragment(window.location.hash.substr(1));
-        if (urlParams.mode) {
-            this.prevReadMode = urlParams.mode;
-        }
-        $.extend(true, params, urlParams);
-    }
-
-    // If we have a title leaf, use that as the default instead of index 0,
-    // but only use as default if book has a few pages
-    if (!params.index && !params.page) {
-        if ('undefined' != typeof(this.titleLeaf) && this.getNumLeafs() > 2) {
-            params.index = this.leafNumToIndex(this.titleLeaf);
-        } else {
-            params.index = 0;
-        }
-    }
-
-    return params;
-}
-
 // init()
 //______________________________________________________________________________
 BookReader.prototype.init = function() {
+    //-------------------------------------------------------------------------
+    // Parse parameters from URL/Cookies/Defaults
+    var startIndex = undefined;
     this.pageScale = this.reduce; // preserve current reduce
 
-    var params = this.initParams();
-
-    // params.index takes precedence over params.page
-    if (params.index) {
-        this.firstIndex = params.index;
-    } else if (params.page) {
-        this.firstIndex = this.parsePageString(params.page);
-    } else {
-        this.firstIndex = 0;
+    // Find start index and mode if set in location hash
+    var params = {};
+    if (this.enableUrlPlugin) {
+        if (window.location.hash) {
+            // params explicitly set in URL
+            params = this.paramsFromFragment(window.location.hash.substr(1));
+        } else if (this.defaults) {
+            // params not explicitly set, use defaults if we have them
+            params = this.paramsFromFragment(this.defaults);
+        }
     }
+
+    if ('undefined' != typeof(params.index)) {
+        startIndex = params.index;
+    } else if ('undefined' != typeof(params.page)) {
+        startIndex = this.getPageIndex(params.page);
+    }
+    // Check for Resume plugin
+    if ('undefined' == typeof(startIndex) && this.enablePageResume && this.getNumLeafs() > 2) {
+        // Check cookies
+        var val = this.getResumeValue();
+        if (val !== null) {
+            startIndex = val;
+        }
+    }
+    if ('undefined' == typeof(startIndex) && 'undefined' != typeof(this.titleLeaf) && this.getNumLeafs() > 2) {
+        // title leaf is known - but only use as default if book has a few pages
+        startIndex = this.leafNumToIndex(this.titleLeaf);
+    }
+    if ('undefined' == typeof(startIndex)) {
+        startIndex = 0;
+    }
+    this.firstIndex = startIndex;
 
     // Use params or browser width to set view mode
     var windowWidth = $(window).width();
@@ -555,6 +534,11 @@ BookReader.prototype.init = function() {
     this.trigger('PostInit');
 
     this.init.initComplete = true;
+    
+    //need to all abstrusive....
+    if(OBTRUSIVE_COPYRIGHTS==='true'){
+    	 $("#copyRightsLink").click()
+    }
 }
 
 BookReader.prototype.trigger = function(name, props) {
@@ -994,14 +978,13 @@ BookReader.prototype.drawLeafsThumbnail = function( seekIndex ) {
                 div.style.width = leafWidth + 'px';
                 div.style.height = leafHeight + 'px';
 
-                // link back to page
+                // link to page in single page mode
                 link = document.createElement("a");
                 $(link).data('leaf', leaf);
                 link.addEventListener('mouseup', function(event) {
                   self.firstIndex = $(this).data('leaf');
-                  if (self.prevReadMode === self.constMode1up
-                        || self.prevReadMode === self.constMode2up) {
-                    self.switchMode(self.prevReadMode);
+                  if (self._prevReadMode !== undefined) {
+                    self.switchMode(self._prevReadMode);
                   } else {
                     self.switchMode(self.constMode1up);
                   }
@@ -1544,12 +1527,25 @@ BookReader.prototype._reduceSort = function(a, b) {
     return a.reduce - b.reduce;
 };
 
-
 // jumpToPage()
 //______________________________________________________________________________
 // Attempts to jump to page.  Returns true if page could be found, false otherwise.
 BookReader.prototype.jumpToPage = function(pageNum) {
-    var pageIndex = this.parsePageString(pageNum);
+
+    var pageIndex;
+
+    // Check for special "leaf"
+    var re = new RegExp('^leaf(\\d+)');
+    leafMatch = re.exec(pageNum);
+    if (leafMatch) {
+        pageIndex = this.leafNumToIndex(parseInt(leafMatch[1],10));
+        if (pageIndex === null) {
+            pageIndex = undefined; // to match return type of getPageIndex
+        }
+
+    } else {
+        pageIndex = this.getPageIndex(pageNum);
+    }
 
     if ('undefined' != typeof(pageIndex)) {
         this.jumpToIndex(pageIndex);
@@ -1657,7 +1653,7 @@ BookReader.prototype.jumpToIndex = function(index, pageX, pageY, noAnimate) {
 //______________________________________________________________________________
 BookReader.prototype.switchMode = function(mode) {
 
-    if (mode === this.mode) {
+    if (mode == this.mode) {
         return;
     }
 
@@ -1668,14 +1664,14 @@ BookReader.prototype.switchMode = function(mode) {
     this.trigger('stop');
     if (this.enableSearch) this.removeSearchHilites();
 
-    if (this.mode === this.constMode1up || this.mode === this.constMode2up) {
-      this.prevReadMode = this.mode;
+    if (this.mode == this.constMode1up || this.mode == this.constMode2up) {
+      this._prevReadMode = this.mode;
     }
 
     this.mode = mode;
 
     // reinstate scale if moving from thumbnail view
-    if (this.pageScale !== this.reduce) {
+    if (this.pageScale != this.reduce) {
         this.reduce = this.pageScale;
     }
 
@@ -3257,7 +3253,7 @@ BookReader.prototype.initEmbedNavbar = function() {
     var thisLink = (window.location + '').replace('?ui=embed',''); // IA-specific
     var logoHtml = '';
     if (this.showLogo) {
-      logoHtml = "<a class='logo' href='" + this.logoURL + "' 'target='_blank' ></a>";
+      logoHtml = "<a class='logo' href='" + this.logoURL + "' 'target='_blank'  src=\"/infra/branding/logo/logo-main.png?version="+br.version +"&amp;institutionCode="+instId+"></a>";
     }
 
     this.refs.$br.append(
@@ -3316,10 +3312,11 @@ BookReader.prototype.buildToolbarElement = function() {
   var logoHtml = '';
   if (this.showLogo) {
     logoHtml = "<span class='BRtoolbarSection BRtoolbarSectionLogo tc'>"
-    +  "<a class='logo' href='" + this.logoURL + "'></a>"
+    +  "<a class='logo' href='" + this.logoURL + "'><img alt=\"Exlibris Logo\" " +
+	"class=\"instLogo\" style=\"max-width:60px;max-height:40px\" src=\"/infra/branding/logo/logo-main.png?version="+br.version +"&amp;institutionCode="+instId+"\"></a>"
     + "</span>";
   }
-
+  
   // Add large screen navigation
   this.refs.$BRtoolbar = $(
     "<div class='BRtoolbar header'>"
@@ -3335,7 +3332,7 @@ BookReader.prototype.buildToolbarElement = function() {
     +     "<span class='BRtoolbarRight'>"
 
     +       "<span class='BRtoolbarSection BRtoolbarSectionInfo tc ph10'>"
-    +         "<button class='BRicon info js-tooltip'></button>"
+    +         "<button id='infoId' class='BRicon info js-tooltip'></button>"
     +         "<button class='BRicon share js-tooltip'></button>"
     +       "</span>"
 
@@ -3594,6 +3591,46 @@ BookReader.prototype.bindNavigationHandlers = function() {
         // Not implemented
     });
 
+    $('#copyRightsLink').bind('click', function(e) {
+    var txt = $(this).text();
+    if(txt ==='Copyrights'){ 
+	   	 $('#BRinfo').find('.BRinfoRightCol').empty().append(self.attribution);
+	   	 $('#copyRightsLink').empty().append(self.AboutTheBook);
+	   	 $('#copyRightsLink').css({'padding-left': '75%'});
+	   	 $('#BRinfo').find('.BRfloatHead').empty().append(txt);
+   	 
+   /*	    	 $('#BRinfo').find('.BRfloatTitle p').empty().append(self.attribution);
+   	    	 $('#copyRightsLink').empty().append(self.AboutTheBook);
+   	    	 $('#copyRightsLink').css({'padding-left': '40%'});
+   	    	 $('#BRinfo').find('.BRfloatHead').empty().append(txt);*/
+	 }else{ 	 	
+	    var metadata;
+	    for (var i = 0; i < self.metadata.length; i++) {
+		      var extraClass;
+		      extraClass = self.metadata[i].extraValueClass || '';
+		      var meta = "<div class=\"BRinfoValueW\">"
+		      +"  <div class=\"BRinfoLabel\">"
+		      +     self.metadata[i].label
+		      +"  </div>"
+		      +"  <div class=\"BRinfoValue " + extraClass + "\">"
+		      +     self.metadata[i].value
+		      +"  </div>"
+		      +"</div>";
+	           		 	
+	   }
+	   $('#BRinfo').find('.BRinfoRightCol').empty().append(meta);  
+	   $('#copyRightsLink').empty().append(self.copyrights);
+	   $('#copyRightsLink').css({'padding-left': '80%'});
+	   $('#BRinfo').find('.BRfloatHead').empty().append(txt);
+	 	}
+	 
+	 	 $("#infoId").click()   	 
+     	 
+
+     });
+
+     
+    
     $('.BRnavCntl').click(
         function(){
             var promises = [];
@@ -4120,6 +4157,34 @@ BookReader.prototype.removeProgressPopup = function() {
     this.popup=null;
 };
 
+BookReader.prototype.buildViewerShareButtons = function()
+{
+	var viewerShareButtons = shareButtons;
+	if (!jQuery.isEmptyObject(viewerShareButtons) && "undefined" !== typeof viewerShareButtons && "" !== viewerShareButtons) {
+        var socialButtons = [];
+        var buttons = JSON.parse(viewerShareButtons);
+        if (!jQuery.isEmptyObject(buttons) && "undefined" !== typeof buttons) {
+            for (var button in buttons) {
+                if ("copyurl" !== button) {
+                    socialButtons.push(button);
+                }
+            }
+            if (socialButtons.length > 0) {
+            	$("#share").jsSocials({
+                    showLabel: false,
+                    showCount: false,
+                    shares: socialButtons
+                });
+                for (i = 0; i < socialButtons.length; i++) {
+                    var button = socialButtons[i];
+                    var socialClass = ".jssocials-share-" + button;
+                    $(document.querySelector(socialClass)).attr("title", buttons[button]);
+                }
+            }
+        }
+    }
+}
+
 
 BookReader.prototype.buildShareDiv = function(jShareDiv) {
     var pageView = document.location + '';
@@ -4132,31 +4197,12 @@ BookReader.prototype.buildShareDiv = function(jShareDiv) {
         '<div class="share-embed">',
           '<p class="share-embed-prompt">Copy and paste one of these options to share this book elsewhere.</p>',
           '<form method="post" action="">',
-              '<fieldset class="fieldset-share-pageview">',
-                  '<label for="pageview">Link to this page view</label>',
-                  '<input type="text" name="pageview" class="BRpageviewValue" value="' + pageView + '"/>',
-              '</fieldset>',
-              '<fieldset class="fieldset-share-book-link">',
+              '<fieldset>',
                   '<label for="booklink">Link to the book</label>',
                   '<input type="text" name="booklink" id="booklink" value="' + bookView + '"/>',
+                  '<br/>',
+                  '<div id="share"></div>',
               '</fieldset>',
-              '<fieldset class="fieldset-embed">',
-                  '<label for="iframe">Embed a mini Book Reader</label>',
-                  '<fieldset class="sub">',
-                      '<label class="sub">',
-                          '<input type="radio" name="pages" value="' + this.constMode1up + '" checked="checked"/>',
-                          '1 page',
-                      '</label>',
-                      '<label class="sub">',
-                          '<input type="radio" name="pages" value="' + this.constMode2up + '"/>',
-                          '2 pages',
-                      '</label>',
-                      '<label class="sub">',
-                          '<input type="checkbox" name="thispage" value="thispage"/>',
-                          'Open to this page?',
-                      '</label>',
-                  '</fieldset>',
-                  '<textarea cols="30" rows="4" name="iframe" class="BRframeEmbed"></textarea>',
               '</fieldset>',
           '</form>',
         '</div>'
@@ -4166,13 +4212,7 @@ BookReader.prototype.buildShareDiv = function(jShareDiv) {
     var jForm = $([
         '<div class="share-title">Share this book</div>',
         '<div class="share-social">',
-          '<div><button class="action share facebook-share-button"><i class="BRicon fb" /> Facebook</button></div>',
-          '<div><button class="action share twitter-share-button"><i class="BRicon twitter" /> Twitter</button></div>',
-          '<div><button class="action share email-share-button"><i class="BRicon email" /> Email</button></div>',
-          '<label class="sub open-to-this-page">',
-              '<input class="thispage-social" type="checkbox" />',
-              'Open to this page?',
-          '</label>',
+        	
         '</div>',
         embedHtml,
         '<div class="BRfloatFoot center">',
@@ -4181,7 +4221,8 @@ BookReader.prototype.buildShareDiv = function(jShareDiv) {
         ].join('\n'));
 
     jForm.appendTo(jShareDiv);
-
+    this.buildViewerShareButtons();
+    
     jForm.find('.fieldset-embed input').bind('change', function() {
         var form = $(this).parents('form:first');
         var params = {};
@@ -4278,16 +4319,16 @@ BookReader.prototype.buildInfoDiv = function(jInfoDiv) {
 
     if (moreInfoText && this.bookUrl) {
       $rightCol.append($("<div class=\"BRinfoValueW\">"
-        +"<div class=\"BRinfoMoreInfoW\">"
-        +"  <a class=\"BRinfoMoreInfo\" href=\""+this.bookUrl+"\">"
-        +   moreInfoText
-        +"  </a>"
-        +"</div>"
       +"</div>"));
     }
-
-
-    var footerEl = "<div class=\"BRfloatFoot BRinfoFooter\"></div>";
+    
+    var copyrightsLink =""; 
+    if(this.attribution){
+		copyrightsLink = '<a  id="copyRightsLink" 	href="#" style="padding-left: 80%;">'+this.copyrights+'</a>';
+     }
+    var footerEl = "<div class=\"BRfloatFoot BRinfoFooter\">" +
+    	copyrightsLink +
+    		"</div>";
 
     var children = [
       $leftCol,
@@ -4385,6 +4426,9 @@ BookReader.prototype.reloadImages = function() {
     }
   });
 };
+
+
+
 
 BookReader.prototype.getToolBarHeight = function() {
   if (this.refs.$BRtoolbar && this.refs.$BRtoolbar.css('display') === 'block') {
@@ -4515,11 +4559,10 @@ BookReader.prototype.leafNumToIndex = function(index) {
 
 /**
  * Create a params object from the current parameters.
- * @param {boolean} processParams - pass true to process params
+ *
  * @return {Object}
  */
-BookReader.prototype.paramsFromCurrent = function(processParams) {
-    processParams = processParams || false;
+BookReader.prototype.paramsFromCurrent = function() {
 
     var params = {};
 
@@ -4538,13 +4581,6 @@ BookReader.prototype.paramsFromCurrent = function(processParams) {
     // search
     if (this.enableSearch) {
         params.searchTerm = this.searchTerm;
-    }
-
-    if (processParams) {
-        // Only include the mode (eg mode/2up) if user has made a choice
-        if (this.prevReadMode == null) {
-            delete params.mode;
-        }
     }
 
     return params;
@@ -4624,7 +4660,7 @@ BookReader.prototype.paramsFromFragment = function(fragment) {
  * Fragments are formatted as a URL path but may be used outside of URLs as a
  * serialization format for BookReader parameters
  *
- * @see https://openlibrary.org/dev/docs/bookurls for fragment syntax
+ * @see http://openlibrary.org/dev/docs/bookurls for fragment syntax
  *
  * @param {Object} params
  * @return {String}
@@ -4666,27 +4702,6 @@ BookReader.prototype.fragmentFromParams = function(params) {
 
     return BookReader.util.encodeURIComponentPlus(fragments.join(separator)).replace(/%2F/g, '/');
 };
-
-/**
- * Parses the pageString format
- * @param {string} pageNum
- * @return {number|undefined}
- */
-BookReader.prototype.parsePageString = function(pageNum) {
-    var pageIndex;
-    // Check for special "leaf"
-    var re = new RegExp('^leaf(\\d+)');
-    var leafMatch = re.exec(pageNum);
-    if (leafMatch) {
-        pageIndex = this.leafNumToIndex(parseInt(leafMatch[1], 10));
-        if (pageIndex === null) {
-            pageIndex = undefined; // to match return type of getPageIndex
-        }
-    } else {
-        pageIndex = this.getPageIndex(pageNum);
-    }
-    return pageIndex;
-}
 
 /**
  * Helper. Flatten the nested structure (make 1d array),

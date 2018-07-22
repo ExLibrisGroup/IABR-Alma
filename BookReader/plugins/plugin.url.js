@@ -92,8 +92,7 @@ BookReader.prototype.startLocationPolling = function() {
 // using window.location.replace
 BookReader.prototype.updateLocationHash = function(skipAnalytics) {
     skipAnalytics = skipAnalytics || false;
-    var params = this.paramsFromCurrent(true);
-
+    var params = this.paramsFromCurrent();
     var newHash = '#' + this.fragmentFromParams(params);
     if (window.location.hash != newHash) {
         window.location.replace(newHash);

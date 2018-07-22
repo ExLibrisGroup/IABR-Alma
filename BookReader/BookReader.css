@@ -1,3 +1,8 @@
+
+body {
+    background-color: #939598;
+}
+
 .BookReader h3 {
   font-size: 20px;
   font-weight: 700;
@@ -13,8 +18,16 @@
   font-size: 67.5%;
   margin: 0;
   padding: 0;
-  position:relative;
   background-color: #3a3b3b;
+}
+
+#BookReader {
+ position:absolute;
+ font-family: arial, sans-serif;
+ left:0;
+ right:0;
+ top:0;
+ bottom:0;
 }
 
 .BRtoolbar {
@@ -204,7 +217,7 @@
 #BRreturn {
     color: #333;
     font-size: 14px;
-    line-height:18px;
+    line-height:35px;
     height: 100%;
     overflow-y: hidden;
     padding-top:7px;
@@ -295,7 +308,7 @@ a.logo {
   width: 50px;
   height: 38px;
   margin: 0 25px;
-  background: transparent url(images/icon_home.svg) no-repeat center center;
+  background: transparent no-repeat center center;
   background-size: contain;
   margin-top: 7px;
 }

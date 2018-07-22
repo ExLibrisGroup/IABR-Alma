@@ -22,7 +22,7 @@
         brInstance.init = function() {
             load(config);
         };
-        brInstance.mode = 2;
+        //brInstance.mode = 2;
 
         function bindBRMethods(){
             brInstance.getPageNum = function(index) {
@@ -64,7 +64,7 @@
                 }
             };
 
-            brInstance.getPageHeight = function(index) {
+/*            brInstance.getPageHeight = function(index) {
                 // console.log(index);
                 var fullWidth = brInstance.IIIFsequence.imagesList[index].width,
                 fullHeight = brInstance.IIIFsequence.imagesList[index].height,
@@ -78,7 +78,7 @@
                 scaleRatio = config.maxWidth/fullWidth;
 
                 return fullWidth*scaleRatio;
-            };
+            };*/
 
             brInstance.getPageURI = function(index) {
                 // Finds the image info.json url
@@ -87,7 +87,7 @@
                 // based on the provided configuration object
                 // (adjusting for width, etc.).
                 var infoJsonUrl = brInstance.IIIFsequence.imagesList[index].imageUrl;
-                var url = infoJsonUrl + "/full/" + config.maxWidth + ",/0/native.jpg";
+                var url = infoJsonUrl + "/full/" + config.maxWidth + ",/0/default.jpg";
                 return url;
             };
 
@@ -104,12 +104,14 @@
                 async: true,
 
                 success: function(jsonLd) {
-                    brInstance.jsonLd = jsonLd;
+                	brInstance.jsonLd = jsonLd;
                     brInstance.bookTitle = jsonLd.label;
+                    brInstance.attribution = jsonLd.attribution;
                     brInstance.bookUrl = '#';
-                    brInstance.thumbnail = jsonLd.thumbnail['@id'];
-                    brInstance.metadata = jsonLd.metadata;
+                    brInstance.thumbnail =  jsonLd.sequences[0].thumbnail;
                     parseSequence(sequenceId);
+                    brInstance.metadata = jsonLd.metadata;
+                    //parseMetadata(jsonLd);
                     bindBRMethods();
 
                     // Call the old initialisation after
@@ -136,6 +138,17 @@
 
         }
 
+        function parseMetadata(jsonLd) {
+        	brInstance.metadata ='<table>';
+            jQuery.each(jsonLd.metadata, function(index, data) {
+                    brInstance.metadata +="<tr><td><h2>" + this.label + '</h2></td> <td>&nbsp;&nbsp;&nbsp;' + this.value + '</td></tr>' ;
+                 
+            });
+            brInstance.metadata +="</table>";
+            delete brInstance.jsonLd;
+
+        }
+        
         function parseSequence(sequenceId) {
 
             jQuery.each(brInstance.jsonLd.sequences, function(index, sequence) {

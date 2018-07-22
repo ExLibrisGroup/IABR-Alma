@@ -65,7 +65,7 @@ BookReader.prototype.buildToolbarElement = (function (super_) {
         if (this.enableSearch) {
           var readIcon = '';
           $el.find('.BRtoolbarRight').append($("<span class='BRtoolbarSection BRtoolbarSectionSearch tc ph20 last'>"
-          +         "<form class='booksearch desktop'>"
+          +         "<form action='javascript:br.search($(\"#textSrch\").val());' class='booksearch desktop'>"
           +           "<input type='search' class='textSrch form-control' name='textSrch' val='' placeholder='Search inside this book'/>"
           +           "<button type='submit' id='btnSrch' name='btnSrch'>"
           +              "<img src=\""+this.imagesBaseURL+"icon_search_button.svg\" />"
@@ -119,102 +119,6 @@ BookReader.prototype.initToolbar = (function (super_) {
 })(BookReader.prototype.initToolbar);
 
 
-
-// search()
-// @param {string} term
-// @param {object} options
-//______________________________________________________________________________
-BookReader.prototype.search = function(term, options) {
-    options = options !== undefined ? options : {};
-    var defaultOptions = {
-        // {bool} (default=false) goToFirstResult - jump to the first result
-        goToFirstResult: false,
-        // {bool} (default=false) disablePopup - don't show the modal progress
-        disablePopup: false,
-        error: br.BRSearchCallbackErrorDesktop,
-        success: br.BRSearchCallback,
-    };
-    options = jQuery.extend({}, defaultOptions, options);
-
-    $('.textSrch').blur(); //cause mobile safari to hide the keyboard
-
-    this.removeSearchResults();
-
-    this.searchTerm = term;
-    this.searchTerm = this.searchTerm.replace(/\//g, ' '); // strip slashes, since this goes in the url
-    if (this.enableUrlPlugin) this.updateLocationHash(true);
-
-    // Add quotes to the term. This is to compenstate for the backends default OR query
-    term = term.replace(/['"]+/g, '');
-    term = '"' + term + '"';
-
-    // Remove the port and userdir
-    var url = 'https://' + this.server.replace(/:.+/, '') + this.searchInsideUrl + '?';
-
-    // Remove subPrefix from end of path
-    var path = this.bookPath;
-    var subPrefixWithSlash = '/' + this.subPrefix;
-    if (this.bookPath.length - this.bookPath.lastIndexOf(subPrefixWithSlash) == subPrefixWithSlash.length) {
-      path = this.bookPath.substr(0, this.bookPath.length - subPrefixWithSlash.length);
-    }
-
-    var urlParams = {
-      'item_id': this.bookId,
-      'doc': this.subPrefix,
-      'path': path,
-      'q': term,
-    };
-
-    var paramStr = $.param(urlParams);
-
-    // NOTE that the API does not expect / (slashes) to be encoded. (%2F) won't work
-    paramStr = paramStr.replace(/%2F/g, '/');
-
-    url += paramStr;
-
-    if (!options.disablePopup) {
-        this.showProgressPopup('<img id="searchmarker" src="'+this.imagesBaseURL + 'marker_srch-on.png'+'"> Search results will appear below...');
-    }
-    $.ajax({
-        url:url,
-        dataType:'jsonp',
-        success: function(data) {
-            if (data.error || 0 == data.matches.length) {
-                options.error.call(br, data, options);
-            } else {
-                options.success.call(br, data, options);
-            }
-        },
-    });
-};
-
-
-
-// BRSearchCallback()
-//______________________________________________________________________________
-BookReader.prototype.BRSearchCallback = function(results, options) {
-    br.searchResults = results;
-    $('#BRnavpos .search').remove();
-    $('#mobileSearchResultWrapper').empty(); // Empty mobile results
-
-    // Update Mobile count
-    var mobileResultsText = results.matches.length == 1 ? "1 match" : results.matches.length + " matches";
-    $('#mobileSearchResultWrapper').append("<div class='mobileNumResults'>"+mobileResultsText+" for &quot;"+this.searchTerm+"&quot;</div>");
-
-    var i, firstResultIndex = null;
-    for (i=0; i < results.matches.length; i++) {
-        br.addSearchResult(results.matches[i].text, br.leafNumToIndex(results.matches[i].par[0].page));
-        if (i === 0 && options.goToFirstResult === true) {
-          firstResultIndex = br.leafNumToIndex(results.matches[i].par[0].page);
-        }
-    }
-    br.updateSearchHilites();
-    br.removeProgressPopup();
-    if (firstResultIndex !== null) {
-        br.jumpToIndex(firstResultIndex);
-    }
-}
-
 // BRSearchCallbackErrorDesktop()
 //______________________________________________________________________________
 BookReader.prototype.BRSearchCallbackErrorDesktop = function(results, options) {
@@ -259,6 +163,51 @@ BookReader.prototype._BRSearchCallbackError = function(results, $el, fade, optio
         }, timeout);
     }
 };
+
+BookReader.prototype.search = function(term) {
+    //console.log('search called with term=' + term);
+
+    $('#textSrch').blur(); //cause mobile safari to hide the keyboard
+    var url = location.protocol  + '//' + window.location.host + '/view/search?action=searchParam&term='+encodeURIComponent(term)+'&repId='+repPid+'&instId='+instId;
+    term = term.replace(/\//g, ' '); // strip slashes, since this goes in the url
+    this.searchTerm = term;
+
+    this.removeSearchResults();
+    this.showProgressPopup('<img id="searchmarker" src="'+this.imagesBaseURL + 'marker_srch-on.png'+'"> Search results will appear below...');
+    $.ajax({url:url, dataType:'jsonp', jsonpCallback:'br.BRSearchCallback'});
+}
+
+// BRSearchCallback()
+//______________________________________________________________________________
+BookReader.prototype.BRSearchCallback = function(results) {
+    //console.log('got ' + results.matches.length + ' results');
+    br.removeSearchResults();
+    br.searchResults = results;
+    //console.log(br.searchResults);
+
+    if (0 == results.matches.length) {
+        var errStr  = 'No matches were found.';
+        var timeout = 1000;
+        if (false === results.indexed) {
+            errStr  = "<p>This book hasn't been indexed for searching yet. We've just started indexing it, so search should be available soon. Please try again later. Thanks!</p>";
+            timeout = 5000;
+        }
+        $(br.popup).html(errStr);
+        setTimeout(function(){
+            $(br.popup).fadeOut('slow', function() {
+                br.removeProgressPopup();
+            })
+        },timeout);
+        return;
+    }
+
+    var i;
+    for (i=0; i<results.matches.length; i++) {
+        br.addSearchResult(results.matches[i].text, br.leafNumToIndex(results.matches[i].par[0].page));
+    }
+    br.updateSearchHilites();
+    br.removeProgressPopup();
+}
 
 
 // updateSearchHilites()
